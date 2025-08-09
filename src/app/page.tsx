@@ -6,7 +6,7 @@ import { askQuestion } from '@/app/actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Download, Send } from 'lucide-react';
+import { Send } from 'lucide-react';
 import { ChatMessage } from '@/components/chat-message';
 import { LoadingMessage } from '@/components/loading-message';
 import { useToast } from '@/hooks/use-toast';
@@ -25,38 +25,6 @@ export default function Home() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
-
-  const handleExportChat = () => {
-    if (messages.length === 0) {
-      toast({
-        variant: 'destructive',
-        title: 'Cannot export empty chat',
-        description: 'Please ask some questions before exporting.',
-      });
-      return;
-    }
-
-    const chatContent = messages
-      .map((msg) => {
-        const prefix = msg.role === 'user' ? 'You' : 'SynapseChat';
-        let content = `${prefix}:\n${msg.content}\n`;
-        if (msg.source) {
-          content += `Source: ${msg.source}\n`;
-        }
-        return content;
-      })
-      .join('\n---\n\n');
-
-    const blob = new Blob([chatContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `synapse-chat-export-${new Date().toISOString()}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -93,9 +61,6 @@ export default function Home() {
     <main className="flex h-screen flex-col">
       <header className="flex h-16 items-center justify-between border-b bg-card px-4 sm:px-6">
         <h1 className="text-xl font-bold">SynapseChat</h1>
-        <Button variant="ghost" size="icon" onClick={handleExportChat} aria-label="Export chat">
-          <Download className="h-5 w-5" />
-        </Button>
       </header>
       <div className="flex-1 overflow-hidden">
         <ScrollArea className="h-full">
