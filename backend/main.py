@@ -7,7 +7,7 @@ This server provides AI-powered neurosurgery assistance using Google ADK.
 import os
 import uuid
 from typing import Dict, Any, List
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -19,13 +19,19 @@ load_dotenv()
 # Import the neurosurgery agent and database service
 from neurosurgery_agent.agent import query_neurosurgery_agent
 from database import db_service
+from rag_service import RAGService
+from document_service import DocumentService
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Neurosurgery AI Backend",
-    description="FastAPI backend for neurosurgery AI chat using Google ADK",
+    description="FastAPI backend for neurosurgery AI chat using Google ADK with RAG",
     version="1.0.0"
 )
+
+# Initialize RAG and document services
+rag_service = RAGService(db_service.supabase)
+document_service = DocumentService(db_service.supabase, rag_service)
 
 # Configure CORS for Next.js frontend
 app.add_middleware(
@@ -71,6 +77,25 @@ class UserSessionsResponse(BaseModel):
     sessions: List[SessionSummary]
 
 
+class DocumentResponse(BaseModel):
+    id: str
+    filename: str
+    file_size: int
+    mime_type: str
+    created_at: str
+    updated_at: str
+
+
+class DocumentListResponse(BaseModel):
+    documents: List[DocumentResponse]
+
+
+class UploadResponse(BaseModel):
+    success: bool
+    message: str
+    document: DocumentResponse = None
+
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -112,10 +137,11 @@ async def chat_with_agent(request: ChatRequest):
             "content": request.query.strip()
         }
         
-        # Query the neurosurgery agent
+        # Query the neurosurgery agent with RAG support
         result = await query_neurosurgery_agent(
             question=request.query.strip(),
-            session_id=session_id
+            session_id=session_id,
+            user_id="anonymous"  # TODO: Replace with actual user ID when auth is implemented
         )
         
         # Create assistant message
@@ -257,15 +283,131 @@ async def delete_chat_session(session_id: str, user_id: str = "anonymous"):
         )
 
 
+# Document upload endpoint
+@app.post("/api/documents/upload", response_model=UploadResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    user_id: str = Form(default="anonymous")
+):
+    """
+    Upload a document for RAG processing.
+    
+    Args:
+        file: The uploaded file
+        user_id: User identifier
+        
+    Returns:
+        Upload response with document metadata
+    """
+    try:
+        # Validate file
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="No file provided")
+        
+        # Read file content
+        content = await file.read()
+        
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty file provided")
+        
+        # Process and store document
+        document = await document_service.upload_document(
+            filename=file.filename,
+            content=content,
+            mime_type=file.content_type or "text/plain",
+            user_id=user_id
+        )
+        
+        if not document:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to process document. Please ensure it's a text file."
+            )
+        
+        return UploadResponse(
+            success=True,
+            message="Document uploaded and processed successfully",
+            document=DocumentResponse(**document)
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading document: {str(e)}"
+        )
+
+
+# Get user documents endpoint
+@app.get("/api/documents", response_model=DocumentListResponse)
+async def get_documents(user_id: str = "anonymous"):
+    """
+    Get all documents for a user.
+    
+    Args:
+        user_id: User identifier
+        
+    Returns:
+        List of user documents
+    """
+    try:
+        documents = await document_service.get_user_documents(user_id)
+        
+        return DocumentListResponse(
+            documents=[DocumentResponse(**doc) for doc in documents]
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving documents: {str(e)}"
+        )
+
+
+# Delete document endpoint
+@app.delete("/api/documents/{document_id}")
+async def delete_document(document_id: str, user_id: str = "anonymous"):
+    """
+    Delete a document and its associated embeddings.
+    
+    Args:
+        document_id: ID of the document to delete
+        user_id: User identifier
+        
+    Returns:
+        Success message
+    """
+    try:
+        success = await document_service.delete_document(document_id, user_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail="Document not found or could not be deleted"
+            )
+        
+        return {"message": "Document deleted successfully", "document_id": document_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting document: {str(e)}"
+        )
+
+
 # Root endpoint
 @app.get("/")
 async def root():
     """Root endpoint with basic API information."""
     return {
-        "message": "Neurosurgery AI Backend",
+        "message": "Neurosurgery AI Backend with RAG",
         "docs": "/docs",
         "health": "/health",
-        "chat_endpoint": "/api/chat"
+        "chat_endpoint": "/api/chat",
+        "documents_endpoint": "/api/documents"
     }
 
 

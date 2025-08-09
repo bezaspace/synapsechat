@@ -165,3 +165,98 @@ export async function deleteSession(sessionId: string, userId: string = 'anonymo
     return false;
   }
 }
+
+// Document management types and functions
+export interface DocumentResponse {
+  id: string;
+  filename: string;
+  file_size: number;
+  mime_type: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UploadResponse {
+  success: boolean;
+  message: string;
+  document?: DocumentResponse;
+}
+
+export async function uploadDocument(file: File, userId: string = 'anonymous'): Promise<UploadResponse> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('user_id', userId);
+
+    const response = await fetch(`${BACKEND_URL}/api/documents/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Upload failed with status ${response.status}`);
+    }
+
+    const data: UploadResponse = await response.json();
+    return data;
+
+  } catch (error) {
+    console.error('Error uploading document:', error);
+    
+    if (error instanceof Error) {
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+    
+    return {
+      success: false,
+      message: 'Failed to upload document'
+    };
+  }
+}
+
+export async function getDocuments(userId: string = 'anonymous'): Promise<DocumentResponse[]> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/documents?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get documents: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.documents || [];
+
+  } catch (error) {
+    console.error('Error getting documents:', error);
+    return [];
+  }
+}
+
+export async function deleteDocument(documentId: string, userId: string = 'anonymous'): Promise<boolean> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/documents/${documentId}?user_id=${userId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete document: ${response.status}`);
+    }
+
+    return true;
+
+  } catch (error) {
+    console.error('Error deleting document:', error);
+    return false;
+  }
+}

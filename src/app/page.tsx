@@ -6,7 +6,8 @@ import { askQuestion, loadChatHistory, getUserSessions, deleteSession, type Sess
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Send, Bot, Plus, MessageSquare, Trash2 } from 'lucide-react';
+import { Send, Bot, Plus, MessageSquare, Trash2, Library } from 'lucide-react';
+import Link from 'next/link';
 import { ChatMessage } from '@/components/chat-message';
 import { LoadingMessage } from '@/components/loading-message';
 import { useToast } from '@/hooks/use-toast';
@@ -218,6 +219,19 @@ export default function Home() {
             >
               <Plus className="h-4 w-4" />
             </Button>
+          </div>
+          
+          {/* Navigation */}
+          <div className="mt-4 space-y-1">
+            <Link href="/library">
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 h-9"
+              >
+                <Library className="h-4 w-4" />
+                Document Library
+              </Button>
+            </Link>
           </div>
         </SidebarHeader>
         <SidebarContent className="px-2">
