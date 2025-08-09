@@ -1,5 +1,7 @@
 'use server';
 
+import type { Message } from '@/lib/types';
+
 // Backend API configuration
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8001';
 
@@ -7,6 +9,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8001';
 export interface NeurosurgeryQueryOutput {
   content: string;
   source?: string;
+  session_id?: string;
 }
 
 interface ChatRequest {
@@ -20,7 +23,24 @@ interface ChatResponse {
   session_id: string;
 }
 
-export async function askQuestion(query: string): Promise<NeurosurgeryQueryOutput> {
+interface ChatHistoryResponse {
+  messages: Message[];
+  session_id: string;
+}
+
+export interface SessionSummary {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+}
+
+interface UserSessionsResponse {
+  sessions: SessionSummary[];
+}
+
+export async function askQuestion(query: string, sessionId?: string): Promise<NeurosurgeryQueryOutput> {
   if (!query || !query.trim()) {
     throw new Error('Query cannot be empty');
   }
@@ -29,8 +49,7 @@ export async function askQuestion(query: string): Promise<NeurosurgeryQueryOutpu
     // Prepare the request payload
     const requestBody: ChatRequest = {
       query: query.trim(),
-      // Optional: You can add session management here if needed
-      // session_id: generateSessionId()
+      session_id: sessionId
     };
 
     // Make the API call to the FastAPI backend
@@ -58,6 +77,7 @@ export async function askQuestion(query: string): Promise<NeurosurgeryQueryOutpu
     return {
       content: data.answer,
       source: data.source,
+      session_id: data.session_id
     };
 
   } catch (error) {
@@ -78,5 +98,70 @@ export async function askQuestion(query: string): Promise<NeurosurgeryQueryOutpu
     return { 
       content: 'Sorry, I encountered an unexpected error while processing your request. Please try again later.' 
     };
+  }
+}
+
+export async function loadChatHistory(sessionId: string): Promise<Message[]> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/chat/${sessionId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to load chat history: ${response.status}`);
+    }
+
+    const data: ChatHistoryResponse = await response.json();
+    return data.messages;
+
+  } catch (error) {
+    console.error('Error loading chat history:', error);
+    return [];
+  }
+}
+
+export async function getUserSessions(userId: string = 'anonymous'): Promise<SessionSummary[]> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/sessions?user_id=${userId}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to load user sessions: ${response.status}`);
+    }
+
+    const data: UserSessionsResponse = await response.json();
+    return data.sessions;
+
+  } catch (error) {
+    console.error('Error loading user sessions:', error);
+    return [];
+  }
+}
+
+export async function deleteSession(sessionId: string, userId: string = 'anonymous'): Promise<boolean> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/chat/${sessionId}?user_id=${userId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to delete session: ${response.status}`);
+    }
+
+    return true;
+
+  } catch (error) {
+    console.error('Error deleting session:', error);
+    return false;
   }
 }

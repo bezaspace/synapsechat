@@ -6,7 +6,7 @@ This server provides AI-powered neurosurgery assistance using Google ADK.
 
 import os
 import uuid
-from typing import Dict, Any
+from typing import Dict, Any, List
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -16,8 +16,9 @@ import uvicorn
 # Load environment variables
 load_dotenv()
 
-# Import the neurosurgery agent
+# Import the neurosurgery agent and database service
 from neurosurgery_agent.agent import query_neurosurgery_agent
+from database import db_service
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -53,6 +54,23 @@ class ChatResponse(BaseModel):
     session_id: str
 
 
+class ChatHistoryResponse(BaseModel):
+    messages: List[Dict[str, Any]]
+    session_id: str
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str
+    created_at: str
+    updated_at: str
+    message_count: int
+
+
+class UserSessionsResponse(BaseModel):
+    sessions: List[SessionSummary]
+
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
@@ -84,11 +102,35 @@ async def chat_with_agent(request: ChatRequest):
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
         
+        # Load existing chat history
+        existing_messages = await db_service.load_chat_session(session_id) or []
+        
+        # Create user message
+        user_message = {
+            "id": str(uuid.uuid4()),
+            "role": "user",
+            "content": request.query.strip()
+        }
+        
         # Query the neurosurgery agent
         result = await query_neurosurgery_agent(
             question=request.query.strip(),
             session_id=session_id
         )
+        
+        # Create assistant message
+        assistant_message = {
+            "id": str(uuid.uuid4()),
+            "role": "assistant",
+            "content": result["answer"],
+            "source": result.get("source", "Neurosurgery AI Agent")
+        }
+        
+        # Update messages list
+        updated_messages = existing_messages + [user_message, assistant_message]
+        
+        # Save to database
+        await db_service.save_chat_session(session_id, updated_messages)
         
         # Return the response
         return ChatResponse(
@@ -105,6 +147,113 @@ async def chat_with_agent(request: ChatRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
+        )
+
+
+# Chat history endpoint
+@app.get("/api/chat/{session_id}", response_model=ChatHistoryResponse)
+async def get_chat_history(session_id: str):
+    """
+    Get chat history for a specific session.
+    
+    Args:
+        session_id: The session ID to retrieve history for
+        
+    Returns:
+        ChatHistoryResponse with messages and session_id
+    """
+    try:
+        messages = await db_service.load_chat_session(session_id) or []
+        
+        return ChatHistoryResponse(
+            messages=messages,
+            session_id=session_id
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving chat history: {str(e)}"
+        )
+
+
+# User sessions endpoint
+@app.get("/api/sessions", response_model=UserSessionsResponse)
+async def get_user_sessions(user_id: str = "anonymous"):
+    """
+    Get all chat sessions for a user.
+    
+    Args:
+        user_id: User identifier (defaults to "anonymous")
+        
+    Returns:
+        UserSessionsResponse with list of session summaries
+    """
+    try:
+        sessions_data = await db_service.get_user_sessions(user_id)
+        
+        sessions = []
+        for session in sessions_data:
+            # Load messages to get count and generate title
+            messages = await db_service.load_chat_session(session["session_id"]) or []
+            
+            # Generate title from first user message or use default
+            title = "New Chat"
+            if messages:
+                first_user_msg = next((msg for msg in messages if msg["role"] == "user"), None)
+                if first_user_msg:
+                    # Use first 50 characters of first message as title
+                    title = first_user_msg["content"][:50]
+                    if len(first_user_msg["content"]) > 50:
+                        title += "..."
+            
+            sessions.append(SessionSummary(
+                session_id=session["session_id"],
+                title=title,
+                created_at=session["created_at"],
+                updated_at=session["updated_at"],
+                message_count=len(messages)
+            ))
+        
+        return UserSessionsResponse(sessions=sessions)
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving user sessions: {str(e)}"
+        )
+
+
+# Delete session endpoint
+@app.delete("/api/chat/{session_id}")
+async def delete_chat_session(session_id: str, user_id: str = "anonymous"):
+    """
+    Delete a specific chat session.
+    
+    Args:
+        session_id: The session ID to delete
+        user_id: User identifier (defaults to "anonymous")
+        
+    Returns:
+        Success message
+    """
+    try:
+        success = await db_service.delete_chat_session(session_id, user_id)
+        
+        if not success:
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found or could not be deleted"
+            )
+        
+        return {"message": "Session deleted successfully", "session_id": session_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error deleting chat session: {str(e)}"
         )
 
 
