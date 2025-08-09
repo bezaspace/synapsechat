@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from 'react';
 import type { Message } from '@/lib/types';
 import { askQuestion } from '@/app/actions';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Download, Send } from 'lucide-react';
@@ -91,40 +90,38 @@ export default function Home() {
   };
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-4 sm:p-8">
-      <Card className="w-full max-w-3xl h-[85vh] flex flex-col shadow-2xl">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-2xl font-bold">SynapseChat</CardTitle>
-          <Button variant="ghost" size="icon" onClick={handleExportChat} aria-label="Export chat">
-            <Download className="h-5 w-5" />
+    <main className="flex h-screen flex-col">
+      <header className="flex h-16 items-center justify-between border-b bg-card px-4 sm:px-6">
+        <h1 className="text-xl font-bold">SynapseChat</h1>
+        <Button variant="ghost" size="icon" onClick={handleExportChat} aria-label="Export chat">
+          <Download className="h-5 w-5" />
+        </Button>
+      </header>
+      <div className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="space-y-6 px-4 py-6 sm:px-6">
+            {messages.map((message) => (
+              <ChatMessage key={message.id} message={message} />
+            ))}
+            {isLoading && <LoadingMessage />}
+            <div ref={messagesEndRef} />
+          </div>
+        </ScrollArea>
+      </div>
+      <div className="border-t bg-card px-4 py-3 sm:px-6">
+        <form onSubmit={handleSubmit} className="flex w-full max-w-2xl mx-auto items-center gap-2">
+          <Input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask a neurosurgery question..."
+            disabled={isLoading}
+            className="flex-grow"
+          />
+          <Button type="submit" disabled={isLoading || !input.trim()} size="icon" aria-label="Send message">
+            <Send className="h-5 w-5" />
           </Button>
-        </CardHeader>
-        <CardContent className="flex-grow overflow-hidden">
-          <ScrollArea className="h-full">
-            <div className="space-y-6 p-1 sm:p-4">
-              {messages.map((message) => (
-                <ChatMessage key={message.id} message={message} />
-              ))}
-              {isLoading && <LoadingMessage />}
-              <div ref={messagesEndRef} />
-            </div>
-          </ScrollArea>
-        </CardContent>
-        <CardFooter>
-          <form onSubmit={handleSubmit} className="flex w-full items-center gap-2">
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a neurosurgery question..."
-              disabled={isLoading}
-              className="flex-grow"
-            />
-            <Button type="submit" disabled={isLoading || !input.trim()} size="icon" aria-label="Send message">
-              <Send className="h-5 w-5" />
-            </Button>
-          </form>
-        </CardFooter>
-      </Card>
+        </form>
+      </div>
     </main>
   );
 }
